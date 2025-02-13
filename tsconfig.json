@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "target": "ES2022",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "esModuleInterop": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  }
+}

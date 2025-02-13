@@ -1,0 +1,27 @@
+{
+  "name": "arangodb-scripts",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsc && tsx src/main.ts",
+    "build": "tsc",
+    "prepare": "husky install || echo husky is not installed",
+    "prettier:check": "prettier --check .",
+    "prettier:fix": "prettier --write ."
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/prompts": "^2.4.9",
+    "husky": "^8.0.3",
+    "prettier": "^2.8.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3"
+  }
+}
