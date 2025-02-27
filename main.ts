@@ -72,16 +72,11 @@ async function insert(count = 1) {
 }
 
 async function run() {
-    let counter = 0;
-    let lastLogTime = performance.now();
     while (true) {
         await insert(1);
-        await setTimeout(5000);
-        counter++;
-        if (performance.now() - lastLogTime > 1000) {
-            console.log(`Inserted ${counter} documents`);
-            lastLogTime = performance.now();
-        }
+        const delay = Math.random() * 5000;
+        console.log('Inserted one document');
+        await setTimeout(delay);
     }
 }
 
