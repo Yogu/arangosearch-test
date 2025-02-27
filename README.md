@@ -1,2 +1,1 @@
-# ArangoDB scripts
-
+# ArangoSearch test
