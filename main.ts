@@ -81,7 +81,7 @@ async function run() {
 }
 
 async function main() {
-    //await setup();
+    await setup();
     await run();
 }
 
