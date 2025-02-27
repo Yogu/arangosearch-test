@@ -2,7 +2,7 @@ import { aql, Database } from 'arangojs';
 import { setTimeout } from 'node:timers/promises';
 import dotenv from 'dotenv';
 
-dotenv.config({ path: '../.env' });
+dotenv.config();
 
 const database = new Database({
     url: process.env.DATABASE_URL ?? 'http://localhost:8529',

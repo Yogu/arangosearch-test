@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "npx tsc && tsx src/main.ts",
+    "start": "npx tsc && tsx main.ts",
     "build": "tsc",
     "prepare": "husky install || echo husky is not installed",
     "prettier:check": "prettier --check .",

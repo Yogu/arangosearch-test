@@ -4,7 +4,7 @@
     "module": "Node16",
     "moduleResolution": "node16",
     "target": "ES2022",
-    "rootDir": "./src",
+    "rootDir": "./",
     "outDir": "./dist",
     "esModuleInterop": true,
     "strict": true,
