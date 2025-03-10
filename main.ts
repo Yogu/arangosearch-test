@@ -1,12 +1,13 @@
 import { aql, Database } from 'arangojs';
 import { setTimeout } from 'node:timers/promises';
 import dotenv from 'dotenv';
-import { ArangoSearchViewProperties, isArangoView } from 'arangojs/views';
+import { ArangoSearchViewLinkOptions, ArangoSearchViewProperties, View } from 'arangojs/views';
+import { runComparisons } from './lib/compare-runner.js';
+import { BenchmarkConfig } from './lib/async-bench.js';
 
 dotenv.config();
 
 const COLLECTION_NAME = 'test';
-const VIEW_NAME = 'test_view';
 
 const database = new Database({
     url: process.env.DATABASE_URL ?? 'http://localhost:8529',
@@ -22,7 +23,34 @@ const database = new Database({
 });
 
 const collection = database.collection(COLLECTION_NAME);
-const view = database.view(VIEW_NAME);
+const view1 = database.view(COLLECTION_NAME + '_view');
+const view2 = database.view(COLLECTION_NAME + '_view2');
+const views = [view1, view2];
+
+const links: Record<string, Omit<ArangoSearchViewLinkOptions, 'nested'>> = {
+    [COLLECTION_NAME]: {
+        fields: {
+            field1: {
+                analyzers: ['identity'],
+            },
+            field2: {
+                analyzers: ['identity'],
+            },
+            field3: {
+                analyzers: ['identity'],
+            },
+            field4: {
+                analyzers: ['identity'],
+            },
+            field5: {
+                analyzers: ['identity'],
+            },
+            category: {
+                analyzers: ['identity'],
+            },
+        },
+    },
+};
 
 async function setup() {
     if (await collection.exists()) {
@@ -31,63 +59,52 @@ async function setup() {
     await collection.create();
     await collection.ensureIndex({ type: 'persistent', fields: ['gauge'] });
 
-    if (await view.exists()) {
-        await view.drop();
+    if (await view1.exists()) {
+        await view1.drop();
     }
-
-    await view.create({
+    await view1.create({
         type: 'arangosearch',
-        links: {
-            [COLLECTION_NAME]: {
-                fields: {
-                    field1: {
-                        analyzers: ['identity'],
-                    },
-                    field2: {
-                        analyzers: ['identity'],
-                    },
-                    field3: {
-                        analyzers: ['identity'],
-                    },
-                    field4: {
-                        analyzers: ['identity'],
-                    },
-                    field5: {
-                        analyzers: ['identity'],
-                    },
-                    category: {
-                        analyzers: ['identity'],
-                    },
-                },
-            },
-        },
+        links,
         commitIntervalMsec: 1000,
         consolidationIntervalMsec: 1000,
         consolidationPolicy: {
             type: 'tier',
-            segmentsMax: 3_000_000,
+            segmentsBytesMax: 3_000_000,
         },
-        /*consolidationPolicy: {
+    });
+
+    if (await view2.exists()) {
+        await view2.drop();
+    }
+    await view2.create({
+        type: 'arangosearch',
+        links,
+        commitIntervalMsec: 1000,
+        consolidationIntervalMsec: 1000,
+        consolidationPolicy: {
             type: 'tier',
             segmentsMin: 3,
-            segmentsBytesFloor: 500000
-        }*/
+        },
     });
 
     await reInitData();
 }
 
 async function reInitData() {
-    const oldProps = (await view.properties()) as ArangoSearchViewProperties;
     // reduce commit interval so the resulting layout of segments is closer to
     // how it would be if the inserts were not done in bulk
-    await view.updateProperties({
-        commitIntervalMsec: 10,
-    });
+    let oldProps = new Map<View, ArangoSearchViewProperties>();
+    for (const view of views) {
+        const props = (await view.properties()) as ArangoSearchViewProperties;
+        oldProps.set(view, props);
+        await view.updateProperties({
+            commitIntervalMsec: 10,
+        });
+    }
 
     try {
         await collection.truncate();
-        const batches = 1000;
+        const batches = 10000;
         const countPerPatch = 1000;
         console.log(
             `Inserting ${batches * countPerPatch} initial documents in ${batches} batches...`,
@@ -97,9 +114,12 @@ async function reInitData() {
             await setTimeout(10);
         }
     } finally {
-        await view.updateProperties({
-            commitIntervalMsec: oldProps.commitIntervalMsec,
-        });
+        for (const view of views) {
+            const props = oldProps.get(view);
+            await view.updateProperties({
+                commitIntervalMsec: props!.commitIntervalMsec,
+            });
+        }
     }
     console.log('Done.');
 }
@@ -119,6 +139,76 @@ async function remove(count = 1) {
     await database.query(aql`
         FOR doc IN ${collection} FILTER doc.gauge > ${targetGauge} SORT doc.gauge ASC LIMIT 0, ${count} REMOVE doc IN ${collection}
     `);
+}
+
+async function testQueryPerformance(fn: PerfQueryFn) {
+    const options: Partial<BenchmarkConfig> = {
+        maxTime: 3, // times 3 because of 3 cycles
+        initialCount: 10,
+    };
+    await runComparisons([
+        {
+            name: fn.name + ', view1 (segmentsBytesMax), no parallelism',
+            fn: () => perfQueryCount({ view: view1, parallelism: 1 }),
+            ...options,
+        },
+        {
+            name: fn.name + ', view1 (segmentsBytesMax), parallelism = 16',
+            fn: () => perfQueryCount({ view: view1, parallelism: 16 }),
+            ...options,
+        },
+        {
+            name: fn.name + ', view2 (segmentsMin), no parallelism',
+            fn: () => perfQueryCount({ view: view2, parallelism: 1 }),
+            ...options,
+        },
+        {
+            name: fn.name + ', view2 (segmentsMin), parallelism = 16',
+            fn: () => perfQueryCount({ view: view2, parallelism: 16 }),
+            ...options,
+        },
+    ]);
+}
+
+interface PerfQueryOptions {
+    readonly view: View;
+    readonly parallelism: number;
+}
+
+type PerfQueryFn = (options: PerfQueryOptions) => Promise<number>;
+
+async function perfQueryCount({ view, parallelism }: PerfQueryOptions) {
+    const res = await database.query(
+        aql`for a in ${view} search a.category == 0 options { parallelism: ${parallelism} } collect with count into c return c`,
+        { profile: true },
+    );
+    return (res.extra.profile as any).executing;
+}
+
+async function perfQueryFind({ view, parallelism }: PerfQueryOptions) {
+    const targetGauge = Math.random() * 0.9; // don't go up to 1 because we might not find any then
+    const result = await database.query(aql`
+        FOR doc IN ${collection} FILTER doc.gauge > ${targetGauge} SORT doc.gauge ASC LIMIT 0, 1 RETURN doc
+    `);
+    const docs = await result.all();
+    if (!docs.length) {
+        throw new Error(`Did not find doc with gauge ${targetGauge}`);
+    }
+    const targetField1 = docs[0].field1;
+    const res = await database.query(
+        aql`for a in ${view} search a.field1 == ${targetField1} options { parallelism: ${parallelism} } return a.field1`,
+        { profile: true },
+    );
+    const foundDoc = await res.all();
+    if (!foundDoc) {
+        throw new Error(`arangosearch find to find doc with field1 == ${targetField1}`);
+    }
+    if (foundDoc[0].field1 !== targetField1) {
+        throw new Error(
+            `arangosearch found doc with field1 == ${foundDoc[0].field1} but should have been field1 = ${targetField1}`,
+        );
+    }
+    return (res.extra.profile as any).executing;
 }
 
 async function run() {
@@ -143,7 +233,11 @@ async function run() {
 
 async function main() {
     await setup();
+    //await reInitData();
     await run();
+
+    //await testQueryPerformance(perfQueryCount);
+    //await testQueryPerformance(perfQueryFind);
 }
 
 main().catch((err) => console.error(err));
