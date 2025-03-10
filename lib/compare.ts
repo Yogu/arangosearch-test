@@ -55,6 +55,7 @@ export async function runComparison(
 
     const fastestSamples = orderedResults[0].result.samples;
 
+    const fastestResult = orderedResults[0];
     const fastestResults = orderedResults.filter(
         (result) => compare(result.result.samples, fastestSamples) >= 0,
     );
@@ -107,9 +108,9 @@ export async function runComparison(
             benchmark: result.result,
             isFastest: false,
             overheadMin: overheadMin,
-            relativeOverheadMin: overheadMin / result.result.meanTime,
+            relativeOverheadMin: overheadMin / fastestResult.result.meanTime,
             overheadMax: overheadMax,
-            relativeOverheadMax: overheadMax / result.result.meanTime,
+            relativeOverheadMax: overheadMax / fastestResult.result.meanTime,
         });
     }
 
