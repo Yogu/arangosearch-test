@@ -1,8 +1,12 @@
 import { aql, Database } from 'arangojs';
 import { setTimeout } from 'node:timers/promises';
 import dotenv from 'dotenv';
+import { ArangoSearchViewProperties, isArangoView } from 'arangojs/views';
 
 dotenv.config();
+
+const COLLECTION_NAME = 'test';
+const VIEW_NAME = 'test_view';
 
 const database = new Database({
     url: process.env.DATABASE_URL ?? 'http://localhost:8529',
@@ -17,9 +21,8 @@ const database = new Database({
     databaseName: process.env.DATABASE_NAME ?? 'test',
 });
 
-const collection = database.collection('test');
-const VIEW_NAME = 'test_view';
-const INITIAL_COUNT = 1_000_000;
+const collection = database.collection(COLLECTION_NAME);
+const view = database.view(VIEW_NAME);
 
 async function setup() {
     if (await collection.exists()) {
@@ -28,7 +31,6 @@ async function setup() {
     await collection.create();
     await collection.ensureIndex({ type: 'persistent', fields: ['gauge'] });
 
-    const view = database.view(VIEW_NAME);
     if (await view.exists()) {
         await view.drop();
     }
@@ -36,7 +38,7 @@ async function setup() {
     await view.create({
         type: 'arangosearch',
         links: {
-            test: {
+            [COLLECTION_NAME]: {
                 fields: {
                     field1: {
                         analyzers: ['identity'],
@@ -76,11 +78,28 @@ async function setup() {
 }
 
 async function reInitData() {
-    await collection.truncate();
-    console.log(`Inserting ${INITIAL_COUNT} initial documents...`);
-    for (let i = 0; i < 1000; i++) {
-        await insert(1000);
-        await setTimeout(10);
+    const oldProps = (await view.properties()) as ArangoSearchViewProperties;
+    // reduce commit interval so the resulting layout of segments is closer to
+    // how it would be if the inserts were not done in bulk
+    await view.updateProperties({
+        commitIntervalMsec: 10,
+    });
+
+    try {
+        await collection.truncate();
+        const batches = 1000;
+        const countPerPatch = 1000;
+        console.log(
+            `Inserting ${batches * countPerPatch} initial documents in ${batches} batches...`,
+        );
+        for (let i = 0; i < batches; i++) {
+            await insert(countPerPatch);
+            await setTimeout(10);
+        }
+    } finally {
+        await view.updateProperties({
+            commitIntervalMsec: oldProps.commitIntervalMsec,
+        });
     }
     console.log('Done.');
 }
