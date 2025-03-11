@@ -149,22 +149,22 @@ async function testQueryPerformance(fn: PerfQueryFn) {
     await runComparisons([
         {
             name: fn.name + ', view1 (segmentsBytesMax), no parallelism',
-            fn: () => perfQueryCount({ view: view1, parallelism: 1 }),
+            fn: () => fn({ view: view1, parallelism: 1 }),
             ...options,
         },
         {
             name: fn.name + ', view1 (segmentsBytesMax), parallelism = 16',
-            fn: () => perfQueryCount({ view: view1, parallelism: 16 }),
+            fn: () => fn({ view: view1, parallelism: 16 }),
             ...options,
         },
         {
             name: fn.name + ', view2 (segmentsMin), no parallelism',
-            fn: () => perfQueryCount({ view: view2, parallelism: 1 }),
+            fn: () => fn({ view: view2, parallelism: 1 }),
             ...options,
         },
         {
             name: fn.name + ', view2 (segmentsMin), parallelism = 16',
-            fn: () => perfQueryCount({ view: view2, parallelism: 16 }),
+            fn: () => fn({ view: view2, parallelism: 16 }),
             ...options,
         },
     ]);
@@ -199,13 +199,13 @@ async function perfQueryFind({ view, parallelism }: PerfQueryOptions) {
         aql`for a in ${view} search a.field1 == ${targetField1} options { parallelism: ${parallelism} } return a.field1`,
         { profile: true },
     );
-    const foundDoc = await res.all();
-    if (!foundDoc) {
-        throw new Error(`arangosearch find to find doc with field1 == ${targetField1}`);
+    const foundItems = await res.all();
+    if (!foundItems.length) {
+        throw new Error(`arangosearch failed to find doc with field1 == ${targetField1}`);
     }
-    if (foundDoc[0].field1 !== targetField1) {
+    if (foundItems[0] !== targetField1) {
         throw new Error(
-            `arangosearch found doc with field1 == ${foundDoc[0].field1} but should have been field1 = ${targetField1}`,
+            `arangosearch found doc with field1 == ${foundItems[0]} but should have been field1 = ${targetField1}`,
         );
     }
     return (res.extra.profile as any).executing;
